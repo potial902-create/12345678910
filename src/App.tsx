@@ -6,7 +6,6 @@ const JUMP_FORCE = -12;
 const GROUND_HEIGHT = 80;
 const PLAYER_SIZE = 36;
 
-// Types
 interface Obstacle {
   x: number;
   y: number;
@@ -58,34 +57,26 @@ const generateLevels = (): Level[] => {
       const gap = Math.max(150 - difficulty * 3, 80) + Math.random() * 100;
       x += gap;
 
-      // Add obstacles based on difficulty
       const rand = Math.random();
       
       if (rand < 0.4) {
-        // Single spike
         obstacles.push({ x, y: 0, width: 35, height: 35, type: 'spike' });
       } else if (rand < 0.6) {
-        // Double spike
         obstacles.push({ x, y: 0, width: 35, height: 35, type: 'spike' });
         obstacles.push({ x: x + 40, y: 0, width: 35, height: 35, type: 'spike' });
       } else if (rand < 0.75) {
-        // Block
         obstacles.push({ x, y: 0, width: 45, height: 45, type: 'block' });
       } else if (rand < 0.85 && i >= 5) {
-        // Triple spike
         obstacles.push({ x, y: 0, width: 35, height: 35, type: 'spike' });
         obstacles.push({ x: x + 40, y: 0, width: 35, height: 35, type: 'spike' });
         obstacles.push({ x: x + 80, y: 0, width: 35, height: 35, type: 'spike' });
       } else if (rand < 0.9 && i >= 8) {
-        // Tall block
         obstacles.push({ x, y: 0, width: 40, height: 70, type: 'block' });
       } else if (rand < 0.95 && i >= 10) {
-        // Block with spike
         obstacles.push({ x, y: 0, width: 45, height: 45, type: 'block' });
         obstacles.push({ x: x + 5, y: -35, width: 35, height: 35, type: 'spike' });
       }
 
-      // Add portals every few levels
       if (i >= 3 && Math.random() < 0.1) {
         obstacles.push({ x: x + 200, y: 0, width: 40, height: 80, type: 'portal_gravity' });
       }
@@ -96,12 +87,10 @@ const generateLevels = (): Level[] => {
         obstacles.push({ x: x + 180, y: 0, width: 40, height: 80, type: 'portal_speed' });
       }
 
-      // Add coins
       if (Math.random() < 0.3) {
         obstacles.push({ x: x + 100, y: -60 - Math.random() * 40, width: 20, height: 20, type: 'coin' });
       }
 
-      // Add jump pads
       if (i >= 4 && Math.random() < 0.15) {
         obstacles.push({ x: x + 150, y: 0, width: 30, height: 15, type: 'pad' });
       }
@@ -133,8 +122,6 @@ function App() {
   const [coins, setCoins] = useState(0);
   const [attempts, setAttempts] = useState(0);
 
-  // Game refs
-  const gameStateRef = useRef<GameState>('menu');
   const playerRef = useRef({ x: 100, y: 0, vy: 0, rotation: 0, grounded: true, gravity: 1 });
   const obstaclesRef = useRef<Obstacle[]>([]);
   const particlesRef = useRef<Particle[]>([]);
@@ -145,6 +132,7 @@ function App() {
   const levelRef = useRef(0);
   const groundOffsetRef = useRef(0);
   const hueRef = useRef(0);
+  const gameStateRef = useRef<GameState>('menu');
 
   const getGroundY = useCallback(() => {
     return canvasSizeRef.current.height - GROUND_HEIGHT;
@@ -167,6 +155,7 @@ function App() {
 
   const startLevel = useCallback((levelIndex: number) => {
     levelRef.current = levelIndex;
+    setCurrentLevel(levelIndex);
     const level = LEVELS[levelIndex];
     
     playerRef.current = { 
@@ -178,7 +167,6 @@ function App() {
       gravity: 1
     };
     
-    // Clone obstacles with ground-relative Y positions
     const groundY = getGroundY();
     obstaclesRef.current = level.obstacles.map(obs => ({
       ...obs,
@@ -203,8 +191,9 @@ function App() {
     const player = playerRef.current;
     spawnParticles(player.x + PLAYER_SIZE / 2, player.y + PLAYER_SIZE / 2, 40, LEVELS[levelRef.current].color);
     
-    const progress = Math.floor((distanceRef.current / (LEVELS[levelRef.current].obstacles.length > 0 ? 
-      Math.max(...LEVELS[levelRef.current].obstacles.map(o => o.x)) : 1000)) * 100);
+    const maxDist = LEVELS[levelRef.current].obstacles.length > 0 ? 
+      Math.max(...LEVELS[levelRef.current].obstacles.map(o => o.x)) : 1000;
+    const progress = Math.floor((distanceRef.current / maxDist) * 100);
     setBestScores(prev => {
       const newScores = [...prev];
       newScores[levelRef.current] = Math.max(newScores[levelRef.current], progress);
@@ -222,6 +211,16 @@ function App() {
     });
     spawnParticles(canvasSizeRef.current.width / 2, canvasSizeRef.current.height / 2, 60, '#ffff00');
   }, [spawnParticles]);
+
+  const goToMenu = useCallback(() => {
+    gameStateRef.current = 'menu';
+    setGameState('menu');
+  }, []);
+
+  const goToLevelSelect = useCallback(() => {
+    gameStateRef.current = 'levelSelect';
+    setGameState('levelSelect');
+  }, []);
 
   const handleJump = useCallback(() => {
     if (gameStateRef.current === 'playing') {
@@ -339,19 +338,16 @@ function App() {
       for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
         const obs = obstaclesRef.current[i];
         
-        // Remove off-screen
         if (obs.x + obs.width < -50) {
           obstaclesRef.current.splice(i, 1);
           continue;
         }
 
-        // Collision check
         const px = player.x;
         const py = player.y;
         const ps = PLAYER_SIZE;
 
         if (obs.type === 'coin') {
-          // Coin collection
           if (px + ps > obs.x && px < obs.x + obs.width && py + ps > obs.y && py < obs.y + obs.height) {
             obstaclesRef.current.splice(i, 1);
             setCoins(prev => prev + 1);
@@ -361,7 +357,6 @@ function App() {
         }
 
         if (obs.type === 'portal_gravity' || obs.type === 'portal_ship' || obs.type === 'portal_speed') {
-          // Portal collision
           if (px + ps > obs.x && px < obs.x + obs.width && py + ps > obs.y && py < obs.y + obs.height) {
             if (obs.type === 'portal_gravity') {
               player.gravity *= -1;
@@ -379,7 +374,6 @@ function App() {
         }
 
         if (obs.type === 'pad') {
-          // Jump pad
           if (px + ps > obs.x && px < obs.x + obs.width && py + ps > obs.y && py < obs.y + obs.height) {
             player.vy = JUMP_FORCE * 1.5;
             player.grounded = false;
@@ -405,12 +399,10 @@ function App() {
         }
       }
 
-      // Check level complete
       if (distanceRef.current > maxDist) {
         completeLevel();
       }
 
-      // Trail
       if (Math.random() > 0.6) {
         spawnParticles(player.x, player.y + PLAYER_SIZE / 2, 1, level.color);
       }
@@ -525,7 +517,6 @@ function App() {
       ctx.lineWidth = 3;
       ctx.strokeRect(-PLAYER_SIZE / 2, -PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
 
-      // Eye
       ctx.fillStyle = '#fff';
       ctx.beginPath();
       ctx.arc(3, -2, 7, 0, Math.PI * 2);
@@ -566,13 +557,11 @@ function App() {
       ctx.textAlign = 'right';
       ctx.fillText(`${score}%`, width - 30, 40);
 
-      // Progress bar
       ctx.fillStyle = '#ffffff30';
       ctx.fillRect(width - 230, 50, 200, 10);
       ctx.fillStyle = level.color;
       ctx.fillRect(width - 230, 50, 200 * (score / 100), 10);
 
-      // Coins
       ctx.fillStyle = '#ffff00';
       ctx.font = 'bold 20px Arial';
       ctx.textAlign = 'left';
@@ -582,7 +571,6 @@ function App() {
     animationRef.current = requestAnimationFrame(gameLoop);
   }, [getGroundY, die, completeLevel, spawnParticles, score]);
 
-  // Initialize
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -604,7 +592,6 @@ function App() {
     };
   }, [gameLoop, getGroundY]);
 
-  // Input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'ArrowUp') {
@@ -635,22 +622,24 @@ function App() {
       
       {/* Main Menu */}
       {gameState === 'menu' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-gradient-to-b from-purple-900/80 to-black/90 backdrop-blur-sm">
-          <div className="text-center">
-            <h1 className="text-7xl md:text-9xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-400 via-blue-500 to-purple-600 mb-4 animate-pulse">
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-20">
+          <div className="bg-black/80 p-12 rounded-3xl border-4 border-green-400 shadow-2xl">
+            <h1 className="text-6xl md:text-8xl font-black text-green-400 mb-4 text-center">
               GEOMETRY
             </h1>
-            <h1 className="text-7xl md:text-9xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500 mb-12">
+            <h1 className="text-6xl md:text-8xl font-black text-blue-400 mb-12 text-center">
               DASH
             </h1>
             <button
-              onClick={() => { gameStateRef.current = 'levelSelect'; setGameState('levelSelect'); }}
-              className="px-12 py-4 text-2xl font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 rounded-full shadow-2xl hover:scale-110 transition-transform duration-200 border-2 border-white/30"
+              onClick={(e) => { e.stopPropagation(); goToLevelSelect(); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+              className="w-full px-16 py-6 text-3xl font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 rounded-2xl shadow-lg hover:from-green-600 hover:to-blue-700 transition-all transform hover:scale-105 border-4 border-white/30 cursor-pointer"
             >
-              PLAY
+              ▶ ИГРАТЬ
             </button>
-            <p className="mt-8 text-gray-400 text-sm">
-              Click / Space / ↑ to jump
+            <p className="mt-8 text-gray-300 text-center text-lg">
+              Space / ↑ / Клик = Прыжок
             </p>
           </div>
         </div>
@@ -658,63 +647,65 @@ function App() {
 
       {/* Level Select */}
       {gameState === 'levelSelect' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-gradient-to-b from-indigo-900/90 to-black/95 backdrop-blur-md overflow-y-auto py-8">
-          <h2 className="text-5xl font-bold text-white mb-8">Select Level</h2>
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-black/90 overflow-y-auto py-8">
+          <h2 className="text-5xl font-bold text-white mb-8">Выбери уровень</h2>
           <div className="grid grid-cols-4 md:grid-cols-5 gap-4 max-w-4xl px-4">
             {LEVELS.map((level, idx) => (
               <button
                 key={level.id}
-                onClick={() => startLevel(idx)}
-                className="relative w-20 h-20 rounded-lg border-2 transition-all hover:scale-110"
+                onClick={(e) => { e.stopPropagation(); startLevel(idx); }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                className="relative w-24 h-24 rounded-xl border-4 transition-all hover:scale-110 active:scale-95 cursor-pointer"
                 style={{ 
                   borderColor: level.color,
                   background: `linear-gradient(135deg, ${level.color}40, ${level.color}10)`,
                   boxShadow: `0 0 20px ${level.color}60`
                 }}
               >
-                <span className="text-2xl font-bold text-white">{level.id}</span>
+                <span className="text-3xl font-bold text-white">{level.id}</span>
                 {bestScores[idx] > 0 && (
-                  <span className="absolute bottom-1 right-1 text-xs text-yellow-400">
+                  <span className="absolute bottom-1 right-1 text-sm text-yellow-400 font-bold">
                     {bestScores[idx]}%
                   </span>
                 )}
-                <div className="absolute -top-1 -right-1 text-xs">
-                  {Array.from({ length: Math.min(5, Math.ceil(level.difficulty / 4)) }).map((_, i) => (
-                    <span key={i} className="text-yellow-400">★</span>
-                  ))}
-                </div>
               </button>
             ))}
           </div>
           <button
-            onClick={() => { gameStateRef.current = 'menu'; setGameState('menu'); }}
-            className="mt-8 px-8 py-3 text-lg font-bold text-white bg-gray-700 rounded-full hover:bg-gray-600 transition-colors"
+            onClick={(e) => { e.stopPropagation(); goToMenu(); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            className="mt-8 px-12 py-4 text-2xl font-bold text-white bg-gray-700 rounded-xl hover:bg-gray-600 transition-colors border-2 border-white/30 cursor-pointer"
           >
-            Back
+            ← Назад
           </button>
         </div>
       )}
 
       {/* Death Screen */}
       {gameState === 'dead' && (
-        <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/70 backdrop-blur-sm">
-          <div className="bg-gray-900/90 p-8 rounded-2xl border-2 border-red-500 text-center">
-            <h2 className="text-5xl font-bold text-red-500 mb-4">CRASHED!</h2>
-            <p className="text-2xl text-white mb-2">Progress: {score}%</p>
-            <p className="text-lg text-yellow-400 mb-2">Coins: ★ {coins}</p>
-            <p className="text-sm text-gray-400 mb-6">Attempt #{attempts}</p>
+        <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/80">
+          <div className="bg-gray-900 p-10 rounded-2xl border-4 border-red-500 text-center">
+            <h2 className="text-6xl font-bold text-red-500 mb-6">КРАШ!</h2>
+            <p className="text-3xl text-white mb-4">Прогресс: {score}%</p>
+            <p className="text-2xl text-yellow-400 mb-6">Монеты: ★ {coins}</p>
             <div className="flex gap-4">
               <button
-                onClick={() => startLevel(levelRef.current)}
-                className="px-8 py-3 text-lg font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 rounded-full hover:scale-105 transition-transform"
+                onClick={(e) => { e.stopPropagation(); startLevel(levelRef.current); }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                className="px-10 py-4 text-2xl font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 rounded-xl hover:scale-105 transition-transform border-2 border-white/30 cursor-pointer"
               >
-                Retry
+                🔄 Заново
               </button>
               <button
-                onClick={() => { gameStateRef.current = 'levelSelect'; setGameState('levelSelect'); }}
-                className="px-8 py-3 text-lg font-bold text-white bg-gray-700 rounded-full hover:bg-gray-600 transition-colors"
+                onClick={(e) => { e.stopPropagation(); goToLevelSelect(); }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                className="px-10 py-4 text-2xl font-bold text-white bg-gray-700 rounded-xl hover:bg-gray-600 transition-colors border-2 border-white/30 cursor-pointer"
               >
-                Levels
+                📋 Уровни
               </button>
             </div>
           </div>
@@ -723,25 +714,29 @@ function App() {
 
       {/* Level Complete */}
       {gameState === 'complete' && (
-        <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/70 backdrop-blur-sm">
-          <div className="bg-gray-900/90 p-8 rounded-2xl border-2 border-yellow-500 text-center">
-            <h2 className="text-5xl font-bold text-yellow-400 mb-4">LEVEL COMPLETE!</h2>
-            <p className="text-3xl text-white mb-2">100%</p>
-            <p className="text-xl text-yellow-400 mb-6">Coins: ★ {coins}</p>
+        <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/80">
+          <div className="bg-gray-900 p-10 rounded-2xl border-4 border-yellow-500 text-center">
+            <h2 className="text-6xl font-bold text-yellow-400 mb-6">УРОВЕНЬ ПРОЙДЕН!</h2>
+            <p className="text-4xl text-white mb-4">100%</p>
+            <p className="text-3xl text-yellow-400 mb-8">Монеты: ★ {coins}</p>
             <div className="flex gap-4">
+              {currentLevel < 19 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); startLevel(currentLevel + 1); }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  className="px-10 py-4 text-2xl font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 rounded-xl hover:scale-105 transition-transform border-2 border-white/30 cursor-pointer"
+                >
+                  ▶ Дальше
+                </button>
+              )}
               <button
-                onClick={() => {
-                  if (levelRef.current < 19) startLevel(levelRef.current + 1);
-                }}
-                className="px-8 py-3 text-lg font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 rounded-full hover:scale-105 transition-transform"
+                onClick={(e) => { e.stopPropagation(); goToLevelSelect(); }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                className="px-10 py-4 text-2xl font-bold text-white bg-gray-700 rounded-xl hover:bg-gray-600 transition-colors border-2 border-white/30 cursor-pointer"
               >
-                Next Level
-              </button>
-              <button
-                onClick={() => { gameStateRef.current = 'levelSelect'; setGameState('levelSelect'); }}
-                className="px-8 py-3 text-lg font-bold text-white bg-gray-700 rounded-full hover:bg-gray-600 transition-colors"
-              >
-                Levels
+                📋 Уровни
               </button>
             </div>
           </div>
