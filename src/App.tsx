@@ -1,17 +1,25 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-// Game constants
-const GRAVITY = 0.6;
-const JUMP_FORCE = -12;
-const GROUND_HEIGHT = 80;
-const PLAYER_SIZE = 36;
+// ========== CONSTANTS ==========
+const GRAVITY = 0.7;
+const JUMP_FORCE = -13;
+const GROUND_Y_OFFSET = 100;
+const PLAYER_SIZE = 38;
 
+// ========== TYPES ==========
 interface Obstacle {
+  x: number;
+  width: number;
+  height: number;
+  type: 'spike' | 'block' | 'tall_block' | 'double_spike' | 'triple_spike' | 'block_spike' | 'portal_gravity' | 'portal_speed' | 'coin' | 'pad';
+}
+
+interface ActiveObstacle {
   x: number;
   y: number;
   width: number;
   height: number;
-  type: 'spike' | 'block' | 'portal_gravity' | 'portal_ship' | 'portal_speed' | 'coin' | 'pad';
+  type: string;
 }
 
 interface Particle {
@@ -20,26 +28,22 @@ interface Particle {
   vx: number;
   vy: number;
   life: number;
-  maxLife: number;
   color: string;
   size: number;
 }
 
-interface Level {
+interface LevelData {
   id: number;
   name: string;
   color: string;
-  bgColor: string;
   speed: number;
-  difficulty: number;
   obstacles: Obstacle[];
 }
 
-type GameState = 'menu' | 'levelSelect' | 'playing' | 'dead' | 'complete';
+type Screen = 'menu' | 'levels' | 'game' | 'dead' | 'win';
 
-// Generate 20 levels
-const generateLevels = (): Level[] => {
-  const levels: Level[] = [];
+// ========== LEVEL GENERATION ==========
+function generateLevel(levelNum: number): LevelData {
   const colors = [
     '#00ff88', '#ff4488', '#44aaff', '#ffaa00', '#aa44ff',
     '#ff6644', '#44ffaa', '#ff44ff', '#44ffff', '#ffff44',
@@ -47,530 +51,603 @@ const generateLevels = (): Level[] => {
     '#ff44aa', '#44aaff', '#ffaa44', '#aa44ff', '#ffffff'
   ];
 
-  for (let i = 0; i < 20; i++) {
-    const obstacles: Obstacle[] = [];
-    const difficulty = i + 1;
-    const levelLength = 3000 + i * 200;
-    let x = 400;
+  const obstacles: Obstacle[] = [];
+  const difficulty = levelNum;
+  const totalLength = 4000 + levelNum * 300;
+  let x = 500;
 
-    while (x < levelLength) {
-      const gap = Math.max(150 - difficulty * 3, 80) + Math.random() * 100;
-      x += gap;
+  while (x < totalLength) {
+    const minGap = Math.max(200 - difficulty * 5, 120);
+    const gap = minGap + Math.random() * 120;
+    x += gap;
 
-      const rand = Math.random();
-      
-      if (rand < 0.4) {
-        obstacles.push({ x, y: 0, width: 35, height: 35, type: 'spike' });
-      } else if (rand < 0.6) {
-        obstacles.push({ x, y: 0, width: 35, height: 35, type: 'spike' });
-        obstacles.push({ x: x + 40, y: 0, width: 35, height: 35, type: 'spike' });
-      } else if (rand < 0.75) {
-        obstacles.push({ x, y: 0, width: 45, height: 45, type: 'block' });
-      } else if (rand < 0.85 && i >= 5) {
-        obstacles.push({ x, y: 0, width: 35, height: 35, type: 'spike' });
-        obstacles.push({ x: x + 40, y: 0, width: 35, height: 35, type: 'spike' });
-        obstacles.push({ x: x + 80, y: 0, width: 35, height: 35, type: 'spike' });
-      } else if (rand < 0.9 && i >= 8) {
-        obstacles.push({ x, y: 0, width: 40, height: 70, type: 'block' });
-      } else if (rand < 0.95 && i >= 10) {
-        obstacles.push({ x, y: 0, width: 45, height: 45, type: 'block' });
-        obstacles.push({ x: x + 5, y: -35, width: 35, height: 35, type: 'spike' });
-      }
+    const r = Math.random();
 
-      if (i >= 3 && Math.random() < 0.1) {
-        obstacles.push({ x: x + 200, y: 0, width: 40, height: 80, type: 'portal_gravity' });
+    if (difficulty <= 3) {
+      // Easy levels - just single spikes and blocks
+      if (r < 0.5) {
+        obstacles.push({ x, width: 36, height: 36, type: 'spike' });
+      } else {
+        obstacles.push({ x, width: 45, height: 45, type: 'block' });
       }
-      if (i >= 7 && Math.random() < 0.08) {
-        obstacles.push({ x: x + 250, y: 0, width: 40, height: 80, type: 'portal_ship' });
+    } else if (difficulty <= 7) {
+      // Medium
+      if (r < 0.3) {
+        obstacles.push({ x, width: 36, height: 36, type: 'spike' });
+      } else if (r < 0.5) {
+        obstacles.push({ x, width: 36, height: 36, type: 'double_spike' });
+      } else if (r < 0.7) {
+        obstacles.push({ x, width: 45, height: 45, type: 'block' });
+      } else if (r < 0.85) {
+        obstacles.push({ x, width: 40, height: 70, type: 'tall_block' });
+      } else {
+        obstacles.push({ x, width: 36, height: 36, type: 'coin' });
       }
-      if (i >= 5 && Math.random() < 0.12) {
-        obstacles.push({ x: x + 180, y: 0, width: 40, height: 80, type: 'portal_speed' });
+    } else if (difficulty <= 14) {
+      // Hard
+      if (r < 0.2) {
+        obstacles.push({ x, width: 36, height: 36, type: 'spike' });
+      } else if (r < 0.35) {
+        obstacles.push({ x, width: 36, height: 36, type: 'double_spike' });
+      } else if (r < 0.5) {
+        obstacles.push({ x, width: 36, height: 36, type: 'triple_spike' });
+      } else if (r < 0.65) {
+        obstacles.push({ x, width: 45, height: 45, type: 'block' });
+      } else if (r < 0.75) {
+        obstacles.push({ x, width: 45, height: 45, type: 'block_spike' });
+      } else if (r < 0.85) {
+        obstacles.push({ x, width: 40, height: 70, type: 'tall_block' });
+      } else if (r < 0.92) {
+        obstacles.push({ x, width: 36, height: 36, type: 'coin' });
+      } else {
+        obstacles.push({ x, width: 30, height: 15, type: 'pad' });
       }
-
-      if (Math.random() < 0.3) {
-        obstacles.push({ x: x + 100, y: -60 - Math.random() * 40, width: 20, height: 20, type: 'coin' });
-      }
-
-      if (i >= 4 && Math.random() < 0.15) {
-        obstacles.push({ x: x + 150, y: 0, width: 30, height: 15, type: 'pad' });
+    } else {
+      // Very hard
+      if (r < 0.2) {
+        obstacles.push({ x, width: 36, height: 36, type: 'double_spike' });
+      } else if (r < 0.4) {
+        obstacles.push({ x, width: 36, height: 36, type: 'triple_spike' });
+      } else if (r < 0.55) {
+        obstacles.push({ x, width: 45, height: 45, type: 'block_spike' });
+      } else if (r < 0.7) {
+        obstacles.push({ x, width: 40, height: 70, type: 'tall_block' });
+      } else if (r < 0.8) {
+        obstacles.push({ x, width: 36, height: 36, type: 'triple_spike' });
+        x += 60;
+        obstacles.push({ x, width: 45, height: 45, type: 'block' });
+      } else if (r < 0.9) {
+        obstacles.push({ x, width: 36, height: 36, type: 'coin' });
+      } else {
+        obstacles.push({ x, width: 30, height: 15, type: 'pad' });
       }
     }
 
-    levels.push({
-      id: i + 1,
-      name: `Level ${i + 1}`,
-      color: colors[i],
-      bgColor: `hsl(${i * 18}, 60%, 8%)`,
-      speed: 5 + i * 0.3,
-      difficulty: i + 1,
-      obstacles,
-    });
+    // Portals in later levels
+    if (difficulty >= 5 && Math.random() < 0.05) {
+      obstacles.push({ x: x + 300, width: 40, height: 80, type: 'portal_speed' });
+    }
   }
 
-  return levels;
-};
+  return {
+    id: levelNum,
+    name: `Level ${levelNum}`,
+    color: colors[(levelNum - 1) % 20],
+    speed: 5 + levelNum * 0.25,
+    obstacles,
+  };
+}
 
-const LEVELS = generateLevels();
+const ALL_LEVELS: LevelData[] = Array.from({ length: 20 }, (_, i) => generateLevel(i + 1));
 
+// ========== MAIN APP ==========
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number>(0);
-  const [gameState, setGameState] = useState<GameState>('menu');
-  const [currentLevel, setCurrentLevel] = useState(0);
-  const [score, setScore] = useState(0);
-  const [bestScores, setBestScores] = useState<number[]>(new Array(20).fill(0));
-  const [coins, setCoins] = useState(0);
-  const [attempts, setAttempts] = useState(0);
+  const [screen, setScreen] = useState<Screen>('menu');
+  const [selectedLevel, setSelectedLevel] = useState(1);
+  const [progress, setProgress] = useState(0);
+  const [coinCount, setCoinCount] = useState(0);
+  const [bestScores, setBestScores] = useState<Record<number, number>>({});
+  const [attemptCount, setAttemptCount] = useState(0);
 
-  const playerRef = useRef({ x: 100, y: 0, vy: 0, rotation: 0, grounded: true, gravity: 1 });
-  const obstaclesRef = useRef<Obstacle[]>([]);
+  // Game refs (not state - for animation loop)
+  const screenRef = useRef<Screen>('menu');
+  const playerRef = useRef({ x: 120, y: 0, vy: 0, rotation: 0, onGround: true });
+  const obstaclesRef = useRef<ActiveObstacle[]>([]);
   const particlesRef = useRef<Particle[]>([]);
-  const gameSpeedRef = useRef(5);
-  const distanceRef = useRef(0);
-  const canvasSizeRef = useRef({ width: 0, height: 0 });
-  const jumpRef = useRef(false);
-  const levelRef = useRef(0);
+  const speedRef = useRef(5);
+  const distRef = useRef(0);
+  const maxDistRef = useRef(5000);
   const groundOffsetRef = useRef(0);
-  const hueRef = useRef(0);
-  const gameStateRef = useRef<GameState>('menu');
+  const levelColorRef = useRef('#00ff88');
+  const coinsRef = useRef(0);
+  const canvasSizeRef = useRef({ w: 800, h: 600 });
+  const jumpKeyRef = useRef(false);
 
-  const getGroundY = useCallback(() => {
-    return canvasSizeRef.current.height - GROUND_HEIGHT;
-  }, []);
+  // Keep screenRef in sync
+  useEffect(() => {
+    screenRef.current = screen;
+  }, [screen]);
 
-  const spawnParticles = useCallback((x: number, y: number, count: number, color: string) => {
+  const getGroundY = () => canvasSizeRef.current.h - GROUND_Y_OFFSET;
+
+  const addParticles = (x: number, y: number, count: number, color: string) => {
     for (let i = 0; i < count; i++) {
       particlesRef.current.push({
-        x,
-        y,
-        vx: (Math.random() - 0.5) * 12,
-        vy: (Math.random() - 0.5) * 12,
+        x, y,
+        vx: (Math.random() - 0.5) * 10,
+        vy: (Math.random() - 0.5) * 10 - 2,
         life: 1,
-        maxLife: Math.random() * 40 + 20,
         color,
-        size: Math.random() * 6 + 2,
+        size: Math.random() * 5 + 2,
       });
     }
-  }, []);
+  };
 
-  const startLevel = useCallback((levelIndex: number) => {
-    levelRef.current = levelIndex;
-    setCurrentLevel(levelIndex);
-    const level = LEVELS[levelIndex];
-    
-    playerRef.current = { 
-      x: 100, 
-      y: getGroundY() - PLAYER_SIZE, 
-      vy: 0, 
-      rotation: 0, 
-      grounded: true,
-      gravity: 1
-    };
-    
+  const startLevel = useCallback((levelNum: number) => {
+    const level = ALL_LEVELS[levelNum - 1];
     const groundY = getGroundY();
-    obstaclesRef.current = level.obstacles.map(obs => ({
-      ...obs,
-      y: obs.type === 'coin' ? groundY + obs.y : groundY - obs.height + obs.y,
-    }));
-    
+
+    // Convert level obstacles to active obstacles with absolute Y
+    const active: ActiveObstacle[] = [];
+    level.obstacles.forEach(obs => {
+      if (obs.type === 'coin') {
+        active.push({
+          x: obs.x,
+          y: groundY - 60 - Math.random() * 40,
+          width: 20,
+          height: 20,
+          type: 'coin',
+        });
+      } else if (obs.type === 'spike') {
+        active.push({ x: obs.x, y: groundY - obs.height, width: obs.width, height: obs.height, type: 'spike' });
+      } else if (obs.type === 'double_spike') {
+        active.push({ x: obs.x, y: groundY - 36, width: 36, height: 36, type: 'spike' });
+        active.push({ x: obs.x + 40, y: groundY - 36, width: 36, height: 36, type: 'spike' });
+      } else if (obs.type === 'triple_spike') {
+        active.push({ x: obs.x, y: groundY - 36, width: 36, height: 36, type: 'spike' });
+        active.push({ x: obs.x + 40, y: groundY - 36, width: 36, height: 36, type: 'spike' });
+        active.push({ x: obs.x + 80, y: groundY - 36, width: 36, height: 36, type: 'spike' });
+      } else if (obs.type === 'block') {
+        active.push({ x: obs.x, y: groundY - obs.height, width: obs.width, height: obs.height, type: 'block' });
+      } else if (obs.type === 'tall_block') {
+        active.push({ x: obs.x, y: groundY - obs.height, width: obs.width, height: obs.height, type: 'block' });
+      } else if (obs.type === 'block_spike') {
+        active.push({ x: obs.x, y: groundY - 45, width: 45, height: 45, type: 'block' });
+        active.push({ x: obs.x + 5, y: groundY - 80, width: 36, height: 36, type: 'spike' });
+      } else if (obs.type === 'portal_speed') {
+        active.push({ x: obs.x, y: groundY - 80, width: 40, height: 80, type: 'portal_speed' });
+      } else if (obs.type === 'portal_gravity') {
+        active.push({ x: obs.x, y: groundY - 80, width: 40, height: 80, type: 'portal_gravity' });
+      } else if (obs.type === 'pad') {
+        active.push({ x: obs.x, y: groundY - 15, width: 30, height: 15, type: 'pad' });
+      }
+    });
+
+    obstaclesRef.current = active;
     particlesRef.current = [];
-    gameSpeedRef.current = level.speed;
-    distanceRef.current = 0;
+    playerRef.current = { x: 120, y: groundY - PLAYER_SIZE, vy: 0, rotation: 0, onGround: true };
+    speedRef.current = level.speed;
+    distRef.current = 0;
+    coinsRef.current = 0;
     groundOffsetRef.current = 0;
-    setScore(0);
-    setCoins(0);
-    setAttempts(prev => prev + 1);
+    levelColorRef.current = level.color;
+
+    // Calculate max distance (last obstacle x + buffer)
+    const lastObsX = active.length > 0 ? Math.max(...active.map(o => o.x)) : 3000;
+    maxDistRef.current = lastObsX + 600;
+
+    setProgress(0);
+    setCoinCount(0);
+    setSelectedLevel(levelNum);
+    setAttemptCount(prev => prev + 1);
+    setScreen('game');
+  }, []);
+
+  const handleDeath = useCallback(() => {
+    const p = playerRef.current;
+    addParticles(p.x + PLAYER_SIZE / 2, p.y + PLAYER_SIZE / 2, 30, levelColorRef.current);
+    addParticles(p.x + PLAYER_SIZE / 2, p.y + PLAYER_SIZE / 2, 20, '#ff4444');
     
-    gameStateRef.current = 'playing';
-    setGameState('playing');
-  }, [getGroundY]);
+    const pct = Math.min(100, Math.floor((distRef.current / maxDistRef.current) * 100));
+    setProgress(pct);
+    setCoinCount(coinsRef.current);
+    setBestScores(prev => ({
+      ...prev,
+      [selectedLevel]: Math.max(prev[selectedLevel] || 0, pct),
+    }));
+    setScreen('dead');
+  }, [selectedLevel]);
 
-  const die = useCallback(() => {
-    gameStateRef.current = 'dead';
-    setGameState('dead');
-    const player = playerRef.current;
-    spawnParticles(player.x + PLAYER_SIZE / 2, player.y + PLAYER_SIZE / 2, 40, LEVELS[levelRef.current].color);
-    
-    const maxDist = LEVELS[levelRef.current].obstacles.length > 0 ? 
-      Math.max(...LEVELS[levelRef.current].obstacles.map(o => o.x)) : 1000;
-    const progress = Math.floor((distanceRef.current / maxDist) * 100);
-    setBestScores(prev => {
-      const newScores = [...prev];
-      newScores[levelRef.current] = Math.max(newScores[levelRef.current], progress);
-      return newScores;
-    });
-  }, [spawnParticles]);
+  const handleWin = useCallback(() => {
+    setProgress(100);
+    setCoinCount(coinsRef.current);
+    setBestScores(prev => ({
+      ...prev,
+      [selectedLevel]: 100,
+    }));
+    addParticles(canvasSizeRef.current.w / 2, canvasSizeRef.current.h / 2, 50, '#ffff00');
+    setScreen('win');
+  }, [selectedLevel]);
 
-  const completeLevel = useCallback(() => {
-    gameStateRef.current = 'complete';
-    setGameState('complete');
-    setBestScores(prev => {
-      const newScores = [...prev];
-      newScores[levelRef.current] = 100;
-      return newScores;
-    });
-    spawnParticles(canvasSizeRef.current.width / 2, canvasSizeRef.current.height / 2, 60, '#ffff00');
-  }, [spawnParticles]);
-
-  const goToMenu = useCallback(() => {
-    gameStateRef.current = 'menu';
-    setGameState('menu');
-  }, []);
-
-  const goToLevelSelect = useCallback(() => {
-    gameStateRef.current = 'levelSelect';
-    setGameState('levelSelect');
-  }, []);
-
-  const handleJump = useCallback(() => {
-    if (gameStateRef.current === 'playing') {
-      jumpRef.current = true;
-    }
-  }, []);
-
-  // Game loop
+  // ========== GAME LOOP ==========
   const gameLoop = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const { width, height } = canvasSizeRef.current;
+    const W = canvasSizeRef.current.w;
+    const H = canvasSizeRef.current.h;
     const groundY = getGroundY();
+    const color = levelColorRef.current;
     const player = playerRef.current;
-    const level = LEVELS[levelRef.current];
+    const isPlaying = screenRef.current === 'game';
 
-    hueRef.current += 0.5;
+    // ---- BACKGROUND ----
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, W, H);
 
-    // Background
-    const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
-    bgGrad.addColorStop(0, level.bgColor);
-    bgGrad.addColorStop(1, '#000');
+    // Background gradient based on level color
+    const bgGrad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W);
+    bgGrad.addColorStop(0, color + '15');
+    bgGrad.addColorStop(1, '#000000');
     ctx.fillStyle = bgGrad;
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, W, H);
 
-    // Background effects
-    for (let i = 0; i < 5; i++) {
-      const x = ((hueRef.current * (i + 1) * 0.5) % width);
-      ctx.fillStyle = `${level.color}10`;
+    // Background grid
+    ctx.strokeStyle = color + '08';
+    ctx.lineWidth = 1;
+    const gridSize = 60;
+    for (let x = 0; x < W; x += gridSize) {
       ctx.beginPath();
-      ctx.arc(x, height * 0.3 + Math.sin(hueRef.current * 0.01 + i) * 50, 100 + i * 20, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = 0; y < H; y += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
     }
 
-    // Ground
-    const groundGrad = ctx.createLinearGradient(0, groundY, 0, height);
-    groundGrad.addColorStop(0, level.color + '40');
-    groundGrad.addColorStop(1, '#000');
-    ctx.fillStyle = groundGrad;
-    ctx.fillRect(0, groundY, width, GROUND_HEIGHT);
+    // ---- GROUND ----
+    const gGrad = ctx.createLinearGradient(0, groundY, 0, H);
+    gGrad.addColorStop(0, color + '50');
+    gGrad.addColorStop(1, '#000');
+    ctx.fillStyle = gGrad;
+    ctx.fillRect(0, groundY, W, H - groundY);
 
-    // Ground line
-    ctx.shadowColor = level.color;
-    ctx.shadowBlur = 15;
-    ctx.strokeStyle = level.color;
+    // Ground glow line
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 20;
+    ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(0, groundY);
-    ctx.lineTo(width, groundY);
+    ctx.lineTo(W, groundY);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
     // Ground grid
-    if (gameStateRef.current === 'playing') {
-      groundOffsetRef.current = (groundOffsetRef.current + gameSpeedRef.current) % 40;
+    if (isPlaying) {
+      groundOffsetRef.current = (groundOffsetRef.current + speedRef.current) % 50;
     }
-    ctx.strokeStyle = level.color + '30';
+    ctx.strokeStyle = color + '20';
     ctx.lineWidth = 1;
-    for (let x = -groundOffsetRef.current; x < width; x += 40) {
+    for (let x = -groundOffsetRef.current; x < W; x += 50) {
       ctx.beginPath();
       ctx.moveTo(x, groundY);
-      ctx.lineTo(x, height);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = groundY + 50; y < H; y += 50) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
       ctx.stroke();
     }
 
-    if (gameStateRef.current === 'playing') {
-      // Jump logic
-      if (jumpRef.current && player.grounded) {
-        player.vy = JUMP_FORCE * player.gravity;
-        player.grounded = false;
-        spawnParticles(player.x + PLAYER_SIZE / 2, player.y + PLAYER_SIZE, 8, level.color);
+    // ---- GAME UPDATE ----
+    if (isPlaying) {
+      // Jump
+      if (jumpKeyRef.current && player.onGround) {
+        player.vy = JUMP_FORCE;
+        player.onGround = false;
+        addParticles(player.x + PLAYER_SIZE / 2, player.y + PLAYER_SIZE, 6, color);
+        jumpKeyRef.current = false;
       }
-      jumpRef.current = false;
 
       // Physics
-      player.vy += GRAVITY * player.gravity;
+      player.vy += GRAVITY;
       player.y += player.vy;
 
-      // Ground collision
-      if (player.gravity > 0 && player.y >= groundY - PLAYER_SIZE) {
+      // Ground check
+      if (player.y >= groundY - PLAYER_SIZE) {
         player.y = groundY - PLAYER_SIZE;
         player.vy = 0;
-        player.grounded = true;
-      } else if (player.gravity < 0 && player.y <= 50) {
-        player.y = 50;
-        player.vy = 0;
-        player.grounded = true;
-      } else if (player.y > height || player.y < -100) {
-        die();
+        player.onGround = true;
       }
 
       // Rotation
-      if (!player.grounded) {
-        player.rotation += 6 * player.gravity;
+      if (!player.onGround) {
+        player.rotation += 5;
       } else {
         player.rotation = Math.round(player.rotation / 90) * 90;
       }
 
       // Move obstacles
-      obstaclesRef.current.forEach(obs => {
-        obs.x -= gameSpeedRef.current;
-      });
+      obstaclesRef.current.forEach(o => { o.x -= speedRef.current; });
+      obstaclesRef.current = obstaclesRef.current.filter(o => o.x + o.width > -100);
 
-      // Update distance
-      distanceRef.current += gameSpeedRef.current;
-      const maxDist = LEVELS[levelRef.current].obstacles.length > 0 ? 
-        Math.max(...LEVELS[levelRef.current].obstacles.map(o => o.x + 500)) : 3000;
-      const progress = Math.min(100, Math.floor((distanceRef.current / maxDist) * 100));
-      setScore(progress);
+      // Distance
+      distRef.current += speedRef.current;
+      const pct = Math.min(100, Math.floor((distRef.current / maxDistRef.current) * 100));
+      setProgress(pct);
 
-      // Check collisions
+      // Collision detection
+      const px = player.x;
+      const py = player.y;
+      const ps = PLAYER_SIZE;
+      const margin = 5;
+
       for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
-        const obs = obstaclesRef.current[i];
-        
-        if (obs.x + obs.width < -50) {
-          obstaclesRef.current.splice(i, 1);
-          continue;
-        }
+        const o = obstaclesRef.current[i];
 
-        const px = player.x;
-        const py = player.y;
-        const ps = PLAYER_SIZE;
-
-        if (obs.type === 'coin') {
-          if (px + ps > obs.x && px < obs.x + obs.width && py + ps > obs.y && py < obs.y + obs.height) {
+        // Coin
+        if (o.type === 'coin') {
+          if (px + ps > o.x && px < o.x + o.width && py + ps > o.y && py < o.y + o.height) {
             obstaclesRef.current.splice(i, 1);
-            setCoins(prev => prev + 1);
-            spawnParticles(obs.x + 10, obs.y + 10, 10, '#ffff00');
+            coinsRef.current++;
+            setCoinCount(coinsRef.current);
+            addParticles(o.x + 10, o.y + 10, 10, '#ffff00');
+            continue;
           }
           continue;
         }
 
-        if (obs.type === 'portal_gravity' || obs.type === 'portal_ship' || obs.type === 'portal_speed') {
-          if (px + ps > obs.x && px < obs.x + obs.width && py + ps > obs.y && py < obs.y + obs.height) {
-            if (obs.type === 'portal_gravity') {
-              player.gravity *= -1;
-              spawnParticles(obs.x + 20, obs.y + 40, 15, '#ff00ff');
-            } else if (obs.type === 'portal_ship') {
-              player.vy = -5;
-              spawnParticles(obs.x + 20, obs.y + 40, 15, '#00ffff');
-            } else if (obs.type === 'portal_speed') {
-              gameSpeedRef.current += 2;
-              spawnParticles(obs.x + 20, obs.y + 40, 15, '#ffff00');
-            }
+        // Portal
+        if (o.type === 'portal_speed') {
+          if (px + ps > o.x && px < o.x + o.width && py + ps > o.y && py < o.y + o.height) {
+            speedRef.current += 1.5;
+            addParticles(o.x + 20, o.y + 40, 15, '#ffff00');
             obstaclesRef.current.splice(i, 1);
+            continue;
           }
           continue;
         }
 
-        if (obs.type === 'pad') {
-          if (px + ps > obs.x && px < obs.x + obs.width && py + ps > obs.y && py < obs.y + obs.height) {
+        if (o.type === 'portal_gravity') {
+          if (px + ps > o.x && px < o.x + o.width && py + ps > o.y && py < o.y + o.height) {
+            addParticles(o.x + 20, o.y + 40, 15, '#ff00ff');
+            obstaclesRef.current.splice(i, 1);
+            continue;
+          }
+          continue;
+        }
+
+        // Jump pad
+        if (o.type === 'pad') {
+          if (px + ps > o.x && px < o.x + o.width && py + ps > o.y && py < o.y + o.height) {
             player.vy = JUMP_FORCE * 1.5;
-            player.grounded = false;
-            spawnParticles(obs.x + 15, obs.y, 10, '#00ff00');
+            player.onGround = false;
+            addParticles(o.x + 15, o.y, 10, '#00ff00');
+            continue;
           }
           continue;
         }
 
-        // Obstacle collision
-        const margin = 6;
-        if (obs.type === 'spike') {
-          if (px + ps - margin > obs.x + 8 && px + margin < obs.x + obs.width - 8 &&
-              py + ps - margin > obs.y + obs.height * 0.3 && py + margin < obs.y + obs.height) {
-            die();
+        // Spike collision
+        if (o.type === 'spike') {
+          const spikeMargin = 10;
+          if (
+            px + ps - margin > o.x + spikeMargin &&
+            px + margin < o.x + o.width - spikeMargin &&
+            py + ps - margin > o.y + o.height * 0.35 &&
+            py + margin < o.y + o.height
+          ) {
+            handleDeath();
             break;
           }
-        } else {
-          if (px + ps - margin > obs.x + margin && px + margin < obs.x + obs.width - margin &&
-              py + ps - margin > obs.y + margin && py + margin < obs.y + obs.height - margin) {
-            die();
+          continue;
+        }
+
+        // Block collision
+        if (o.type === 'block') {
+          if (
+            px + ps - margin > o.x + margin &&
+            px + margin < o.x + o.width - margin &&
+            py + ps - margin > o.y + margin &&
+            py + margin < o.y + o.height - margin
+          ) {
+            handleDeath();
             break;
           }
         }
       }
 
-      if (distanceRef.current > maxDist) {
-        completeLevel();
+      // Win check
+      if (distRef.current >= maxDistRef.current) {
+        handleWin();
       }
 
-      if (Math.random() > 0.6) {
-        spawnParticles(player.x, player.y + PLAYER_SIZE / 2, 1, level.color);
+      // Trail particles
+      if (Math.random() > 0.5) {
+        addParticles(player.x, player.y + PLAYER_SIZE / 2, 1, color);
       }
     }
 
-    // Draw obstacles
-    obstaclesRef.current.forEach(obs => {
+    // ---- DRAW OBSTACLES ----
+    obstaclesRef.current.forEach(o => {
       ctx.save();
-      
-      if (obs.type === 'spike') {
-        const grad = ctx.createLinearGradient(obs.x, obs.y + obs.height, obs.x, obs.y);
-        grad.addColorStop(0, level.color + '80');
-        grad.addColorStop(1, level.color);
+      if (o.type === 'spike') {
+        const grad = ctx.createLinearGradient(o.x, o.y + o.height, o.x, o.y);
+        grad.addColorStop(0, color + '60');
+        grad.addColorStop(1, color);
         ctx.fillStyle = grad;
-        ctx.shadowColor = level.color;
-        ctx.shadowBlur = 10;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 12;
         ctx.beginPath();
-        ctx.moveTo(obs.x + obs.width / 2, obs.y);
-        ctx.lineTo(obs.x + obs.width, obs.y + obs.height);
-        ctx.lineTo(obs.x, obs.y + obs.height);
+        ctx.moveTo(o.x + o.width / 2, o.y);
+        ctx.lineTo(o.x + o.width, o.y + o.height);
+        ctx.lineTo(o.x, o.y + o.height);
         ctx.closePath();
         ctx.fill();
-        ctx.strokeStyle = level.color;
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
         ctx.stroke();
-      } else if (obs.type === 'block') {
-        const grad = ctx.createLinearGradient(obs.x, obs.y, obs.x, obs.y + obs.height);
-        grad.addColorStop(0, level.color);
-        grad.addColorStop(1, level.color + '60');
+      } else if (o.type === 'block') {
+        const grad = ctx.createLinearGradient(o.x, o.y, o.x, o.y + o.height);
+        grad.addColorStop(0, color);
+        grad.addColorStop(1, color + '50');
         ctx.fillStyle = grad;
-        ctx.shadowColor = level.color;
-        ctx.shadowBlur = 8;
-        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-        ctx.strokeStyle = level.color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 10;
+        ctx.fillRect(o.x, o.y, o.width, o.height);
+        ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
-        ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
-      } else if (obs.type === 'portal_gravity') {
-        ctx.fillStyle = '#ff00ff80';
-        ctx.shadowColor = '#ff00ff';
-        ctx.shadowBlur = 20;
-        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-        ctx.strokeStyle = '#ff00ff';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
-        ctx.fillStyle = '#fff';
-        ctx.font = '20px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('G', obs.x + 20, obs.y + 50);
-      } else if (obs.type === 'portal_ship') {
-        ctx.fillStyle = '#00ffff80';
-        ctx.shadowColor = '#00ffff';
-        ctx.shadowBlur = 20;
-        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-        ctx.strokeStyle = '#00ffff';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
-        ctx.fillStyle = '#fff';
-        ctx.font = '20px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('S', obs.x + 20, obs.y + 50);
-      } else if (obs.type === 'portal_speed') {
-        ctx.fillStyle = '#ffff0080';
+        ctx.strokeRect(o.x, o.y, o.width, o.height);
+        // Inner detail
+        ctx.strokeStyle = color + '40';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(o.x + 5, o.y + 5, o.width - 10, o.height - 10);
+      } else if (o.type === 'portal_speed') {
+        ctx.fillStyle = '#ffff0050';
         ctx.shadowColor = '#ffff00';
-        ctx.shadowBlur = 20;
-        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+        ctx.shadowBlur = 25;
+        ctx.fillRect(o.x, o.y, o.width, o.height);
         ctx.strokeStyle = '#ffff00';
         ctx.lineWidth = 3;
-        ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
+        ctx.strokeRect(o.x, o.y, o.width, o.height);
         ctx.fillStyle = '#fff';
-        ctx.font = '20px Arial';
+        ctx.font = 'bold 24px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('>', obs.x + 20, obs.y + 50);
-      } else if (obs.type === 'coin') {
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⚡', o.x + o.width / 2, o.y + o.height / 2);
+      } else if (o.type === 'portal_gravity') {
+        ctx.fillStyle = '#ff00ff50';
+        ctx.shadowColor = '#ff00ff';
+        ctx.shadowBlur = 25;
+        ctx.fillRect(o.x, o.y, o.width, o.height);
+        ctx.strokeStyle = '#ff00ff';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(o.x, o.y, o.width, o.height);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('↕', o.x + o.width / 2, o.y + o.height / 2);
+      } else if (o.type === 'coin') {
         ctx.fillStyle = '#ffff00';
         ctx.shadowColor = '#ffff00';
         ctx.shadowBlur = 15;
         ctx.beginPath();
-        ctx.arc(obs.x + 10, obs.y + 10, 10, 0, Math.PI * 2);
+        ctx.arc(o.x + 10, o.y + 10, 10, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = '#ffaa00';
         ctx.lineWidth = 2;
         ctx.stroke();
-      } else if (obs.type === 'pad') {
+        ctx.fillStyle = '#ffaa00';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('★', o.x + 10, o.y + 11);
+      } else if (o.type === 'pad') {
         ctx.fillStyle = '#00ff00';
         ctx.shadowColor = '#00ff00';
-        ctx.shadowBlur = 10;
-        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-        ctx.strokeStyle = '#00ff00';
+        ctx.shadowBlur = 12;
+        ctx.fillRect(o.x, o.y, o.width, o.height);
+        ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
-        ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
+        ctx.strokeRect(o.x, o.y, o.width, o.height);
       }
-      
       ctx.restore();
     });
 
-    // Draw player
-    if (gameStateRef.current === 'playing') {
-      ctx.save();
-      ctx.translate(player.x + PLAYER_SIZE / 2, player.y + PLAYER_SIZE / 2);
-      ctx.rotate((player.rotation * Math.PI) / 180);
+    // ---- DRAW PLAYER ----
+    if (isPlaying || screenRef.current === 'dead') {
+      if (isPlaying) {
+        ctx.save();
+        ctx.translate(player.x + PLAYER_SIZE / 2, player.y + PLAYER_SIZE / 2);
+        ctx.rotate((player.rotation * Math.PI) / 180);
 
-      ctx.shadowColor = level.color;
-      ctx.shadowBlur = 20;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 20;
 
-      const playerGrad = ctx.createLinearGradient(-PLAYER_SIZE / 2, -PLAYER_SIZE / 2, PLAYER_SIZE / 2, PLAYER_SIZE / 2);
-      playerGrad.addColorStop(0, level.color);
-      playerGrad.addColorStop(1, level.color + '80');
-      ctx.fillStyle = playerGrad;
-      ctx.fillRect(-PLAYER_SIZE / 2, -PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
+        // Body
+        const pGrad = ctx.createLinearGradient(-PLAYER_SIZE / 2, -PLAYER_SIZE / 2, PLAYER_SIZE / 2, PLAYER_SIZE / 2);
+        pGrad.addColorStop(0, color);
+        pGrad.addColorStop(1, color + '80');
+        ctx.fillStyle = pGrad;
+        ctx.fillRect(-PLAYER_SIZE / 2, -PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
 
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(-PLAYER_SIZE / 2, -PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
+        // Border
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(-PLAYER_SIZE / 2, -PLAYER_SIZE / 2, PLAYER_SIZE, PLAYER_SIZE);
 
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(3, -2, 7, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#000';
-      ctx.beginPath();
-      ctx.arc(5, -2, 3, 0, Math.PI * 2);
-      ctx.fill();
+        // Eye
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(4, -3, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(6, -3, 4, 0, Math.PI * 2);
+        ctx.fill();
 
-      ctx.restore();
+        ctx.restore();
+      }
     }
 
-    // Draw particles
+    // ---- PARTICLES ----
     particlesRef.current.forEach(p => {
       p.x += p.vx;
       p.y += p.vy;
-      p.vy += 0.3;
-      p.life -= 1 / p.maxLife;
-
+      p.vy += 0.2;
+      p.life -= 0.02;
       if (p.life > 0) {
         ctx.globalAlpha = p.life;
         ctx.fillStyle = p.color;
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = 5;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
       }
     });
     particlesRef.current = particlesRef.current.filter(p => p.life > 0);
 
-    // HUD
-    if (gameStateRef.current === 'playing') {
+    // ---- HUD (during game) ----
+    if (isPlaying) {
+      const currentPct = Math.min(100, Math.floor((distRef.current / maxDistRef.current) * 100));
+      // Progress bar
+      ctx.fillStyle = '#ffffff20';
+      ctx.fillRect(20, 20, W - 40, 12);
+      ctx.fillStyle = color;
+      ctx.fillRect(20, 20, (W - 40) * (currentPct / 100), 12);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(20, 20, W - 40, 12);
+
+      // Progress text
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 28px Arial';
-      ctx.textAlign = 'right';
-      ctx.fillText(`${score}%`, width - 30, 40);
-
-      ctx.fillStyle = '#ffffff30';
-      ctx.fillRect(width - 230, 50, 200, 10);
-      ctx.fillStyle = level.color;
-      ctx.fillRect(width - 230, 50, 200 * (score / 100), 10);
-
-      ctx.fillStyle = '#ffff00';
       ctx.font = 'bold 20px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`${currentPct}%`, W / 2, 38);
+
+      // Coins
+      ctx.fillStyle = '#ffff00';
+      ctx.font = 'bold 22px Arial';
       ctx.textAlign = 'left';
-      ctx.fillText(`★ ${coins}`, 20, 40);
+      ctx.fillText(`★ ${coinsRef.current}`, 20, 45);
     }
 
-    animationRef.current = requestAnimationFrame(gameLoop);
-  }, [getGroundY, die, completeLevel, spawnParticles, score]);
+    requestAnimationFrame(gameLoop);
+  }, [handleDeath, handleWin]);
 
+  // ========== INIT CANVAS ==========
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -578,132 +655,159 @@ function App() {
     const resize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      canvasSizeRef.current = { width: canvas.width, height: canvas.height };
+      canvasSizeRef.current = { w: canvas.width, h: canvas.height };
     };
 
     resize();
     window.addEventListener('resize', resize);
-    playerRef.current.y = getGroundY() - PLAYER_SIZE;
-    animationRef.current = requestAnimationFrame(gameLoop);
+    requestAnimationFrame(gameLoop);
 
     return () => {
       window.removeEventListener('resize', resize);
-      cancelAnimationFrame(animationRef.current);
     };
-  }, [gameLoop, getGroundY]);
+  }, [gameLoop]);
 
+  // ========== INPUT ==========
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' || e.code === 'ArrowUp') {
+    // Keyboard - global
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
         e.preventDefault();
-        handleJump();
+        if (screenRef.current === 'game') {
+          jumpKeyRef.current = true;
+        }
       }
     };
-    const handleClick = () => handleJump();
-    const handleTouch = (e: TouchEvent) => {
-      e.preventDefault();
-      handleJump();
+    window.addEventListener('keydown', onKeyDown);
+
+    // Mouse/Touch - on document, but skip if clicking on a button
+    const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      if (screenRef.current !== 'game') return;
+      const target = e.target as HTMLElement;
+      // Don't jump if clicking on a button or interactive element
+      if (target.tagName === 'BUTTON' || target.closest('button')) return;
+      jumpKeyRef.current = true;
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('mousedown', handleClick);
-    window.addEventListener('touchstart', handleTouch, { passive: false });
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('touchstart', onPointerDown as EventListener, { passive: true });
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('mousedown', handleClick);
-      window.removeEventListener('touchstart', handleTouch);
+      window.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('touchstart', onPointerDown as EventListener);
     };
-  }, [handleJump]);
+  }, []);
 
+  // ========== RENDER ==========
   return (
-    <div className="relative w-full h-full overflow-hidden bg-black">
-      <canvas ref={canvasRef} className="absolute inset-0" />
-      
-      {/* Main Menu */}
-      {gameState === 'menu' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center z-20">
-          <div className="bg-black/80 p-12 rounded-3xl border-4 border-green-400 shadow-2xl">
-            <h1 className="text-6xl md:text-8xl font-black text-green-400 mb-4 text-center">
+    <div className="relative w-full h-screen overflow-hidden bg-black select-none">
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+
+      {/* ===== MAIN MENU ===== */}
+      {screen === 'menu' && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-black/70">
+          <div className="text-center">
+            {/* Cube icon */}
+            <div className="mx-auto mb-6 w-24 h-24 border-4 border-green-400 bg-green-500/30 rounded-lg flex items-center justify-center shadow-lg shadow-green-500/50"
+              style={{ animation: 'pulse 2s infinite' }}>
+              <div className="w-10 h-10 bg-white rounded-full relative">
+                <div className="absolute top-1 right-1 w-5 h-5 bg-black rounded-full"></div>
+              </div>
+            </div>
+
+            <h1 className="text-5xl md:text-7xl font-black text-green-400 mb-2"
+              style={{ textShadow: '0 0 30px #00ff88' }}>
               GEOMETRY
             </h1>
-            <h1 className="text-6xl md:text-8xl font-black text-blue-400 mb-12 text-center">
+            <h1 className="text-5xl md:text-7xl font-black text-blue-400 mb-10"
+              style={{ textShadow: '0 0 30px #4488ff' }}>
               DASH
             </h1>
+
             <button
-              onClick={(e) => { e.stopPropagation(); goToLevelSelect(); }}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-              className="w-full px-16 py-6 text-3xl font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 rounded-2xl shadow-lg hover:from-green-600 hover:to-blue-700 transition-all transform hover:scale-105 border-4 border-white/30 cursor-pointer"
+              onClick={() => setScreen('levels')}
+              className="px-16 py-5 text-3xl font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 rounded-2xl shadow-2xl hover:scale-110 active:scale-95 transition-transform border-3 border-white/40 cursor-pointer"
             >
               ▶ ИГРАТЬ
             </button>
-            <p className="mt-8 text-gray-300 text-center text-lg">
-              Space / ↑ / Клик = Прыжок
-            </p>
+
+            <div className="mt-8 space-y-2">
+              <p className="text-gray-300 text-lg">🎮 Space / ↑ — прыжок</p>
+              <p className="text-gray-500 text-sm">20 уровней • Порталы • Монеты</p>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Level Select */}
-      {gameState === 'levelSelect' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-black/90 overflow-y-auto py-8">
-          <h2 className="text-5xl font-bold text-white mb-8">Выбери уровень</h2>
-          <div className="grid grid-cols-4 md:grid-cols-5 gap-4 max-w-4xl px-4">
-            {LEVELS.map((level, idx) => (
-              <button
-                key={level.id}
-                onClick={(e) => { e.stopPropagation(); startLevel(idx); }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-                className="relative w-24 h-24 rounded-xl border-4 transition-all hover:scale-110 active:scale-95 cursor-pointer"
-                style={{ 
-                  borderColor: level.color,
-                  background: `linear-gradient(135deg, ${level.color}40, ${level.color}10)`,
-                  boxShadow: `0 0 20px ${level.color}60`
-                }}
-              >
-                <span className="text-3xl font-bold text-white">{level.id}</span>
-                {bestScores[idx] > 0 && (
-                  <span className="absolute bottom-1 right-1 text-sm text-yellow-400 font-bold">
-                    {bestScores[idx]}%
-                  </span>
-                )}
-              </button>
-            ))}
+      {/* ===== LEVEL SELECT ===== */}
+      {screen === 'levels' && (
+        <div className="absolute inset-0 flex flex-col items-center z-10 bg-black/85 overflow-y-auto">
+          <h2 className="text-4xl md:text-5xl font-bold text-white mt-8 mb-6">Уровни</h2>
+
+          <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-5 gap-4 px-4 max-w-3xl pb-4">
+            {ALL_LEVELS.map((level, idx) => {
+              const best = bestScores[level.id] || 0;
+              const isComplete = best >= 100;
+              return (
+                <button
+                  key={level.id}
+                  onClick={() => startLevel(level.id)}
+                  className="relative w-full aspect-square rounded-xl border-3 transition-all hover:scale-110 active:scale-95 cursor-pointer flex flex-col items-center justify-center"
+                  style={{
+                    borderColor: level.color,
+                    background: `linear-gradient(135deg, ${level.color}30, ${level.color}05)`,
+                    boxShadow: `0 0 15px ${level.color}40`,
+                  }}
+                >
+                  <span className="text-2xl md:text-3xl font-bold text-white">{level.id}</span>
+                  {best > 0 && (
+                    <span className="text-xs text-yellow-400 font-bold mt-1">
+                      {isComplete ? '✓' : `${best}%`}
+                    </span>
+                  )}
+                  {/* Difficulty stars */}
+                  <div className="absolute bottom-1 left-1 right-1 flex justify-center gap-0.5">
+                    {Array.from({ length: Math.min(5, Math.ceil(level.id / 4)) }).map((_, i) => (
+                      <span key={i} className="text-yellow-500 text-[8px]">★</span>
+                    ))}
+                  </div>
+                </button>
+              );
+            })}
           </div>
+
           <button
-            onClick={(e) => { e.stopPropagation(); goToMenu(); }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
-            className="mt-8 px-12 py-4 text-2xl font-bold text-white bg-gray-700 rounded-xl hover:bg-gray-600 transition-colors border-2 border-white/30 cursor-pointer"
+            onClick={() => setScreen('menu')}
+            className="mt-4 mb-8 px-10 py-3 text-xl font-bold text-white bg-gray-700 rounded-xl hover:bg-gray-600 transition-colors border-2 border-white/20 cursor-pointer"
           >
             ← Назад
           </button>
         </div>
       )}
 
-      {/* Death Screen */}
-      {gameState === 'dead' && (
-        <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/80">
-          <div className="bg-gray-900 p-10 rounded-2xl border-4 border-red-500 text-center">
-            <h2 className="text-6xl font-bold text-red-500 mb-6">КРАШ!</h2>
-            <p className="text-3xl text-white mb-4">Прогресс: {score}%</p>
-            <p className="text-2xl text-yellow-400 mb-6">Монеты: ★ {coins}</p>
-            <div className="flex gap-4">
+      {/* ===== DEATH SCREEN ===== */}
+      {screen === 'dead' && (
+        <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/75">
+          <div className="bg-gray-900/95 p-8 md:p-10 rounded-2xl border-3 border-red-500 text-center max-w-md mx-4 shadow-2xl shadow-red-500/30">
+            <h2 className="text-5xl font-black text-red-500 mb-4"
+              style={{ textShadow: '0 0 20px #ff4444' }}>
+              💀 КРАШ!
+            </h2>
+            <p className="text-2xl text-white mb-2">Прогресс: <span className="text-green-400 font-bold">{progress}%</span></p>
+            <p className="text-xl text-yellow-400 mb-1">★ Монеты: {coinCount}</p>
+            <p className="text-sm text-gray-400 mb-6">Попытка #{attemptCount}</p>
+
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button
-                onClick={(e) => { e.stopPropagation(); startLevel(levelRef.current); }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-                className="px-10 py-4 text-2xl font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 rounded-xl hover:scale-105 transition-transform border-2 border-white/30 cursor-pointer"
+                onClick={() => startLevel(selectedLevel)}
+                className="px-8 py-4 text-xl font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 rounded-xl hover:scale-105 active:scale-95 transition-transform cursor-pointer"
               >
                 🔄 Заново
               </button>
               <button
-                onClick={(e) => { e.stopPropagation(); goToLevelSelect(); }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-                className="px-10 py-4 text-2xl font-bold text-white bg-gray-700 rounded-xl hover:bg-gray-600 transition-colors border-2 border-white/30 cursor-pointer"
+                onClick={() => setScreen('levels')}
+                className="px-8 py-4 text-xl font-bold text-white bg-gray-700 rounded-xl hover:bg-gray-600 transition-colors border-2 border-white/20 cursor-pointer"
               >
                 📋 Уровни
               </button>
@@ -712,29 +816,29 @@ function App() {
         </div>
       )}
 
-      {/* Level Complete */}
-      {gameState === 'complete' && (
-        <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/80">
-          <div className="bg-gray-900 p-10 rounded-2xl border-4 border-yellow-500 text-center">
-            <h2 className="text-6xl font-bold text-yellow-400 mb-6">УРОВЕНЬ ПРОЙДЕН!</h2>
-            <p className="text-4xl text-white mb-4">100%</p>
-            <p className="text-3xl text-yellow-400 mb-8">Монеты: ★ {coins}</p>
-            <div className="flex gap-4">
-              {currentLevel < 19 && (
+      {/* ===== WIN SCREEN ===== */}
+      {screen === 'win' && (
+        <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/75">
+          <div className="bg-gray-900/95 p-8 md:p-10 rounded-2xl border-3 border-yellow-400 text-center max-w-md mx-4 shadow-2xl shadow-yellow-500/30">
+            <h2 className="text-5xl font-black text-yellow-400 mb-4"
+              style={{ textShadow: '0 0 20px #ffaa00' }}>
+              🏆 ПОБЕДА!
+            </h2>
+            <p className="text-3xl text-white mb-2">100%</p>
+            <p className="text-xl text-yellow-400 mb-6">★ Монеты: {coinCount}</p>
+
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              {selectedLevel < 20 && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); startLevel(currentLevel + 1); }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onTouchStart={(e) => e.stopPropagation()}
-                  className="px-10 py-4 text-2xl font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 rounded-xl hover:scale-105 transition-transform border-2 border-white/30 cursor-pointer"
+                  onClick={() => startLevel(selectedLevel + 1)}
+                  className="px-8 py-4 text-xl font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 rounded-xl hover:scale-105 active:scale-95 transition-transform cursor-pointer"
                 >
                   ▶ Дальше
                 </button>
               )}
               <button
-                onClick={(e) => { e.stopPropagation(); goToLevelSelect(); }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-                className="px-10 py-4 text-2xl font-bold text-white bg-gray-700 rounded-xl hover:bg-gray-600 transition-colors border-2 border-white/30 cursor-pointer"
+                onClick={() => setScreen('levels')}
+                className="px-8 py-4 text-xl font-bold text-white bg-gray-700 rounded-xl hover:bg-gray-600 transition-colors border-2 border-white/20 cursor-pointer"
               >
                 📋 Уровни
               </button>
