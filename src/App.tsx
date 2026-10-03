@@ -51,12 +51,8 @@ function createLevel1(): Obstacle[] {
   for (let i = 0; i < 10; i++) {
     const gap = 200 + Math.random() * 150;
     shipX += gap;
-    // Spikes on ground and ceiling
-    if (Math.random() > 0.5) {
-      obs.push({ x: shipX, y: 0, w: 36, h: 36, type: 'spike' });
-    } else {
-      obs.push({ x: shipX, y: -150, w: 45, h: 45, type: 'block' });
-    }
+    // Spikes on ground
+    obs.push({ x: shipX, y: 0, w: 36, h: 36, type: 'spike' });
   }
 
   // Add cube portal back
@@ -352,7 +348,7 @@ function GameCanvas({ onDeath, onWin }: { onDeath: (pct: number) => void; onWin:
         } else {
           // Ship mode - hold to go up
           if (s.holdingJump) {
-            s.vy = -4;
+            s.vy = Math.max(s.vy - 0.8, -5);
           }
           s.jumpPressed = false;
         }
@@ -473,30 +469,35 @@ function GameCanvas({ onDeath, onWin }: { onDeath: (pct: number) => void; onWin:
               break;
             }
           } else if (o.type === 'block' || o.type === 'tall_block') {
-            // Check if landing on top
-            const prevBottom = py + ps - s.vy;
-            const isOnTop = prevBottom <= o.y + m && py + ps > o.y && s.vy >= 0;
+            // Check collision
+            const isOverlapping = px + ps - m > o.x + m && px + m < o.x + o.w - m &&
+                                  py + ps - m > o.y + m && py + m < o.y + o.h - m;
             
-            if (isOnTop) {
-              // Land on block
-              s.py = o.y - ps;
-              s.vy = 0;
-              s.onGround = true;
-            } else if (px + ps - m > o.x + m && px + m < o.x + o.w - m &&
-                       py + ps - m > o.y + m && py + m < o.y + o.h - m) {
-              // Hit side or bottom - die
-              s.alive = false;
-              for (let i = 0; i < 25; i++) {
-                s.particles.push({
-                  x: px + 19, y: py + 19,
-                  vx: (Math.random() - 0.5) * 14, vy: (Math.random() - 0.5) * 14,
-                  life: 1, color: i % 2 === 0 ? color : '#ff4444',
-                  size: Math.random() * 6 + 2,
-                });
+            if (isOverlapping) {
+              // Check if landing on top (player was above block last frame)
+              const playerBottom = py + ps;
+              const wasAbove = playerBottom - s.vy <= o.y + 5;
+              
+              if (wasAbove && s.vy >= 0) {
+                // Land on block
+                s.py = o.y - ps;
+                s.vy = 0;
+                s.onGround = true;
+              } else {
+                // Hit side or bottom - die
+                s.alive = false;
+                for (let i = 0; i < 25; i++) {
+                  s.particles.push({
+                    x: px + 19, y: py + 19,
+                    vx: (Math.random() - 0.5) * 14, vy: (Math.random() - 0.5) * 14,
+                    life: 1, color: i % 2 === 0 ? color : '#ff4444',
+                    size: Math.random() * 6 + 2,
+                  });
+                }
+                const pct = Math.min(100, Math.floor((s.dist / s.maxDist) * 100));
+                setTimeout(() => onDeath(pct), 600);
+                break;
               }
-              const pct = Math.min(100, Math.floor((s.dist / s.maxDist) * 100));
-              setTimeout(() => onDeath(pct), 600);
-              break;
             }
           }
         }
@@ -509,10 +510,11 @@ function GameCanvas({ onDeath, onWin }: { onDeath: (pct: number) => void; onWin:
 
         // Trail
         if (Math.random() > 0.5) {
+          const trailColor = s.mode === 'ship' ? '#00ffff' : color;
           s.particles.push({
             x: s.px, y: s.py + 19,
             vx: -2, vy: (Math.random() - 0.5) * 2,
-            life: 1, color, size: Math.random() * 3 + 1,
+            life: 1, color: trailColor, size: Math.random() * 3 + 1,
           });
         }
       }
