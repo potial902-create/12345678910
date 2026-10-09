@@ -36,7 +36,6 @@ function MenuScreen({ onPlay, onLevels, onEditor }: { onPlay: () => void; onLeve
       background: 'linear-gradient(180deg, #0a0020 0%, #100838 50%, #0d0628 100%)',
       position: 'relative', overflow: 'hidden'
     }}>
-      {/* Animated background elements */}
       <div style={{ position: 'absolute', inset: 0, opacity: 0.1 }}>
         {Array.from({ length: 20 }).map((_, i) => (
           <div key={i} style={{
@@ -67,7 +66,6 @@ function MenuScreen({ onPlay, onLevels, onEditor }: { onPlay: () => void; onLeve
         DASH
       </h1>
       
-      {/* Cube character */}
       <div style={{
         width: '120px', height: '120px',
         background: 'linear-gradient(135deg, #00ff88, #00cc66)',
@@ -91,7 +89,6 @@ function MenuScreen({ onPlay, onLevels, onEditor }: { onPlay: () => void; onLeve
         </div>
       </div>
 
-      {/* Buttons */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '300px', position: 'relative', zIndex: 1 }}>
         <MenuButton onClick={onPlay} color="#00ff88" icon="▶" text="ИГРАТЬ" />
         <MenuButton onClick={onLevels} color="#4488ff" icon="📋" text="УРОВНИ" />
@@ -436,7 +433,7 @@ function GameScreen({ level, customObstacles, onDeath, onWin }: { level: number;
     // Generate obstacles
     if (level === 99 && customObstacles.length > 0) {
       s.obstacles = customObstacles.map(o => ({
-        x: o.x, y: o.type === 'coin' ? groundY() - 80 : groundY() - o.h,
+        x: o.x, y: o.type === 'coin' ? groundY() - 80 : o.type.startsWith('portal_') ? groundY() - 120 : groundY() - o.h,
         w: o.w, h: o.h, type: o.type
       }));
     } else {
@@ -537,32 +534,29 @@ function GameScreen({ level, customObstacles, onDeath, onWin }: { level: number;
       ctx.shadowBlur = 0;
 
       if (s.alive) {
-        // Mode-specific controls
+        // Mode-specific controls - INSTANT response
         if (s.mode === 'cube') {
           if (s.jumpPressed && s.onGround) {
             s.vy = -15;
             s.onGround = false;
           }
-          s.jumpPressed = false;
         } else if (s.mode === 'ship') {
           if (s.holdingJump) {
-            s.vy = Math.max(s.vy - 1, -6);
+            s.vy = -5;
           }
-          s.jumpPressed = false;
         } else if (s.mode === 'wave') {
           if (s.holdingJump) {
-            s.vy = -5;
+            s.vy = -4;
           } else {
-            s.vy = 5;
+            s.vy = 4;
           }
-          s.jumpPressed = false;
         } else if (s.mode === 'ball') {
           if (s.jumpPressed && s.onGround) {
             s.vy = -13;
             s.onGround = false;
           }
-          s.jumpPressed = false;
         }
+        s.jumpPressed = false;
 
         // Physics
         if (s.mode === 'cube' || s.mode === 'ball') {
@@ -572,7 +566,7 @@ function GameScreen({ level, customObstacles, onDeath, onWin }: { level: number;
           if (!s.onGround) s.rot += 6;
           else s.rot = Math.round(s.rot / 90) * 90;
         } else if (s.mode === 'ship') {
-          s.vy += 0.4;
+          s.vy += 0.3;
           s.py += s.vy;
           if (s.py >= gy - 38 || s.py < 50) {
             s.alive = false;
@@ -682,17 +676,31 @@ function GameScreen({ level, customObstacles, onDeath, onWin }: { level: number;
           ctx.lineWidth = 2;
           ctx.strokeRect(o.x, o.y, o.w, o.h);
         } else if (o.type.startsWith('portal_')) {
+          // Draw portal as vertical gate
           const pColor = o.type === 'portal_ship' ? '#00ffff' : o.type === 'portal_wave' ? '#ffaa00' : o.type === 'portal_ball' ? '#ff00ff' : '#ff00ff';
-          ctx.fillStyle = pColor + '60';
+          
+          // Portal glow
           ctx.shadowColor = pColor;
-          ctx.shadowBlur = 25;
-          ctx.fillRect(o.x, o.y, o.w, o.h);
+          ctx.shadowBlur = 30;
+          
+          // Portal frame
           ctx.strokeStyle = pColor;
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 4;
           ctx.strokeRect(o.x, o.y, o.w, o.h);
+          
+          // Portal interior
+          const grad = ctx.createLinearGradient(o.x, o.y, o.x + o.w, o.y + o.h);
+          grad.addColorStop(0, pColor + '40');
+          grad.addColorStop(0.5, pColor + '80');
+          grad.addColorStop(1, pColor + '40');
+          ctx.fillStyle = grad;
+          ctx.fillRect(o.x + 2, o.y + 2, o.w - 4, o.h - 4);
+          
           ctx.shadowBlur = 0;
+          
+          // Portal icon
           ctx.fillStyle = 'white';
-          ctx.font = 'bold 24px Arial';
+          ctx.font = 'bold 32px Arial';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           const icon = o.type === 'portal_ship' ? '🚀' : o.type === 'portal_wave' ? '🌊' : o.type === 'portal_ball' ? '⚽' : '⬛';
